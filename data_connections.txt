@@ -1,0 +1,8 @@
+data connections:
+13_shape/MA Blocks 2010: 12_csv / block (household size); 13_csv / block (pop); 19_csv / block (pop, race, housing units, tenure); 20_csv / block (household type, type by size)
+13_shape/MA BlkGrp 2017: 12_csv / blk_grp (units, tenure, rent, value); 13_csv / blk_grp (pop); 21_csv / blk_grp (median income, per capita income)
+Boundary_CityBoundary
+Mass Roads Inventory (all_roads.json) (* already as json)
+ENVIRONMENTAL_StreetTrees
+central_area
+PorterPolygon
