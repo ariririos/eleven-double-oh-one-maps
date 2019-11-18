@@ -12,7 +12,7 @@ let map = L.map('map', {
     zoom: 12 // approx bounded by I-95
 });
 
-let dark = L.tileLayer("http://api.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={mapboxToken}", { id: 'mapbox.light', mapboxToken });
+let dark = L.tileLayer("https://api.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={mapboxToken}", { id: 'mapbox.light', mapboxToken });
 dark.addTo(map);
 
 function projectFeaturesToWGS84(features) {
