@@ -52,8 +52,9 @@ let map = L.map('map', {
     zoom: 12 // approx bounded by I-95
 });
 
-let dark = L.tileLayer("https://api.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={mapboxToken}", { id: 'mapbox.light', mapboxToken });
-dark.addTo(map);
+let dark = L.tileLayer("https://api.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={mapboxToken}", { id: 'mapbox.dark', mapboxToken });
+let light = L.tileLayer("https://api.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={mapboxToken}", { id: 'mapbox.light', mapboxToken });
+light.addTo(map);
 
 function projectFeaturesToWGS84(features) {
     // FIXME: not dealing with multipolygons here
@@ -68,7 +69,7 @@ function projectFeaturesToWGS84(features) {
     });
 }
 
-async function createChloroplethLayer(geojson, shortPropName, longPropName, colorSchemeName, project) {
+async function createChloroplethLayer(geojson, shortPropName, longPropName, colorSchemeName, project, legendName) {
 
     let moddedGeojson = {
         type: geojson.type,
@@ -76,22 +77,15 @@ async function createChloroplethLayer(geojson, shortPropName, longPropName, colo
         features: project ? projectFeaturesToWGS84(geojson.features) : geojson.features
     }
 
-    // const perCapitaPopulationName = propAliases.totalPopBlock;
-    // const perCapita = true;
     const featPropGetter = feat => feat.properties[shortPropName];
-    // const featPropGetter = feat => {
-    //     if (perCapita) return (feat.properties[chloroplethPropName] / feat.properties[perCapitaPopulationName]) || 0;
-    //     else return feat.properties[chloroplethPropName];
-    // };
 
     let propValues = moddedGeojson.features.map(feat => featPropGetter(feat)).filter(x => x != null);
     let propClasses = jenks(propValues, 5);
-    console.log(shortPropName, propClasses);
-    // FIXME: some sort of off-by-one error in the coloring here
+
     let getColorForPolygon = v => {
         let colorBracket = 0;
-        for (let i = 0; i < propClasses.length; i++) {
-            if (v >= propClasses[i]) colorBracket = i;
+        for (let i = 0; i < propClasses.length - 1; i++) {
+            if (v > propClasses[i]) colorBracket = i;
         }
         return colorbrewer[colorSchemeName][5][colorBracket];
     };
@@ -108,24 +102,8 @@ async function createChloroplethLayer(geojson, shortPropName, longPropName, colo
 
     let onEachFeature = (feature, layer) => layer.bindPopup(`${longPropName}: ${featPropGetter(feature)}`);
 
-    // legend
-
-    // TODO: add titles for layers
-    // TODO: make it update when we turn layers on and off
-    // FIXME: should prob move this out of this function if we're making it update with different layers
-    // let legend = L.control({ position: "bottomright" });
-    // legend.onAdd = () => {
-    //     let div = L.DomUtil.create("div", "info legend");
-    //     for (let i = 1; i < propClasses.length; i++) {
-    //         div.innerHTML += `<div><i style="background: ${getColorForPolygon(propClasses[i])}"></i>${propClasses[i]}${propClasses[i+1] ? "-" + propClasses[i+1] + "<br>": "+"}</div>`.trim();
-    //     }
-    //     return div;
-    // }
-    // legend.addTo(map);
-
-
     return {
-        layer: L.geoJSON(moddedGeojson, { style, onEachFeature }),
+        layer: L.geoJSON(moddedGeojson, { style, onEachFeature, legendName }),
         colors: {
             propClasses,
             polygonIdsByColor,
@@ -134,15 +112,15 @@ async function createChloroplethLayer(geojson, shortPropName, longPropName, colo
     }
 }
 
-async function createAndAddChloroplethLayer(jsonPath, shortPropName, longPropName, colorSchemeName, project, addToMap, mapInst) {
+async function createAndAddChloroplethLayer(jsonPath, shortPropName, longPropName, colorSchemeName, project, addToMap, legendName, mapInst) {
     let data = await fetch(jsonPath);
     let geojson = await data.json()
-    let chloropleth = await createChloroplethLayer(geojson, shortPropName, longPropName, colorSchemeName, project);
+    let chloropleth = await createChloroplethLayer(geojson, shortPropName, longPropName, colorSchemeName, project, legendName);
     if (addToMap) chloropleth.layer.addTo(mapInst);
     return chloropleth;
 }
 
-async function createPointLayer(geojson, color, project, filterFn) {
+async function createPointLayer(geojson, color, project, filterFn, labelFn, legendName) {
     let moddedGeojson = {
         type: geojson.type,
         crs: geojson.crs,
@@ -150,20 +128,44 @@ async function createPointLayer(geojson, color, project, filterFn) {
     }
 
     return {
-        layer: L.geoJSON(moddedGeojson, { pointToLayer: (point, latlng) =>  L.circleMarker(latlng, { radius: 3, color, weight: 1 }) }),
+        layer: L.geoJSON(moddedGeojson, {
+            pointToLayer: (point, latlng) =>  {
+                let marker = L.circleMarker(latlng, { radius: 3, color, weight: 1 });
+                try {
+                    marker.bindTooltip(document.createTextNode(labelFn(point)), { permanent: true, opacity: 0.7 });
+                }
+                catch  (e) {
+                    // debugger;
+                }
+                return marker;
+            },
+            legendName
+        }),
         color
     }
 }
 
-async function createAndAddPointLayer(jsonPath, color, project, filterFn, addToMap, mapInst) {
+async function createAndAddPointLayer(jsonPath, color, project, filterFn, labelFn, addToMap, legendName, mapInst) {
     let data = await fetch(jsonPath);
     let geojson = await data.json();
-    let point = await createPointLayer(geojson, color, project, filterFn);
+    let point = await createPointLayer(geojson, color, project, filterFn, labelFn, legendName);
     if (addToMap) point.layer.addTo(mapInst);
     return point;
 }
 
 async function main() {
+
+    // add Cambridge-Somerville boundary:
+    let boundary = await fetch('data/combo/CambridgeSomervilleBoundary.geojson');
+    let boundaryJSON = await boundary.json();
+    L.geoJSON(boundaryJSON, { style: { fill: false, color: 'pink' } }).addTo(map);
+
+    const pathAliases = {
+        'data/combo/MA_blck_grp_2017_Central.geojson': 'Central (block groups)',
+        'data/combo/MA_blck_grp_2017_Porter.geojson': 'Porter (block groups)',
+        'data/combo/CentralSelection.geojson': 'Central (blocks)',
+        'data/combo/PorterSelection.geojson': 'Porter (blocks)',
+    };
 
     let chloroLayersData = {
         'data/combo/MA_blck_grp_2017_Central.geojson': {
@@ -311,44 +313,131 @@ async function main() {
                                                                 layerOpts.longName,
                                                                 layerOpts.colorScheme || 'RdPu',
                                                                 false,
-                                                                layerOpts.addToMap,
+                                                                layerOpts.addToMap || false,
+                                                                layerOpts.legendName,
                                                                 map
                                                              );
         }
     }
 
     // FIXME: filter trees
-    // let pointLayersData = {
-    //     // trees: ['data/ENVIRONMENTAL_StreetTrees.geojson', 'green', false, ((p, i) => i % 500 == 0), true]
-    // };
+    let pointLayersData = {
+        'data/combo/BasketCentral.geojson': {
+            color: 'green',
+            label: point => point.properties.Min_Price,
+            addToMap: true,
+            filterFn: () => true
+        },
+        'data/combo/CoffeeCentral.geojson': {
+            color: 'blue',
+            label: point => point.properties.Price,
+            addToMap: true,
+            filterFn: () => true
+        },
+        'data/combo/BasketPorter.geojson': {
+            color: 'green',
+            label: point => point.properties.Min_Price,
+            addToMap: true,
+            filterFn: () => true
+        },
+        'data/combo/CoffeePorter.geojson': {
+            color: 'blue',
+            label: point => point.properties.Value,
+            addToMap: true,
+            filterFn: () => true
+        }
+    };
 
-    // let pointLayers = Object.assign({}, Object.fromEntries(Object.keys(pointLayersData).map(key => [key])));
+    const pointLayerPropAliases = {
+        'data/combo/BasketCentral.geojson': 'Minimum price of a carton of milk (Central)',
+        'data/combo/CoffeeCentral.geojson': 'Minimum price of a cup of coffee (Central)',
+        'data/combo/BasketPorter.geojson': 'Minimum price of a carton of milk (Porter)',
+        'data/combo/CoffeePorter.geojson': 'Minimum price of a cup of coffee (Porter)'
+    };
 
-    // for (let [name, data] of Object.entries(pointLayersData)) {
-    //     pointLayers[name] = await createAndAddPointLayer(...data, map);
-    // }
+    let pointLayers = Object.assign({}, Object.fromEntries(Object.keys(pointLayersData).map(key => [key])));
+
+    for (let [path, layerOpts] of Object.entries(pointLayersData)) {
+        pointLayers[path] = await createAndAddPointLayer(
+                                    path,
+                                    layerOpts.color || "blue",
+                                    false,
+                                    layerOpts.filterFn || (() => true),
+                                    layerOpts.label || (() => ""),
+                                    layerOpts.addToMap || false,
+                                    pointLayerPropAliases[path],
+                                    map
+                                  );
+    }
 
     let baseMap = L.layerGroup();
     baseMap.addTo(map);
 
     L.control.scale().addTo(map);
 
-    let overlays = {};
+    let overlaysByPath = {
+        label: 'Overlays',
+        children: []
+    };
 
-    for (let path of Object.values(chloroLayers)) {
-        for (let [legendName, layerData] of Object.entries(path)) {
-            overlays[legendName] = layerData.layer;
+    for (let [path, props] of Object.entries(chloroLayers)) {
+        let childLabel = {
+            label: pathAliases[path],
+            children: []
+        };
+        overlaysByPath.children.push(childLabel);
+        for (let [legendName, layerData] of Object.entries(props)) {
+            childLabel.children.push({
+                label: legendName,
+                layer: layerData.layer
+            });
         }
     }
 
-    L.control.layers(
-        // basemaps:
+    let commOverlay = {
+        label: 'Commercial affordability',
+        children: []
+    };
+    overlaysByPath.children.push(commOverlay);
+
+    for (let [path, alias] of Object.entries(pointLayerPropAliases)) {
+        commOverlay.children.push({
+            label: alias,
+            layer: pointLayers[path].layer
+        });
+    }
+
+    const layersControl = L.control.layers.tree(
         {
-            "Base map only": baseMap,
-            // [layerAliases.blkGrpMedianIncome]: chloroLayers.blkGrpMedianIncomeCentral.layer
+            label: 'Base layers',
+            children: [
+                {
+                    label: 'Dark basemap',
+                    layer: dark
+                },
+                {
+                    label: 'Light basemap',
+                    layer: light
+                }
+            ]
         },
-        overlays
-    ).addTo(map);
+        overlaysByPath
+    );
+    layersControl.addTo(map);
+    layersControl.collapseTree(true);
+
+
+    /**
+     * label: 'USA',
+            children: [
+                {
+                    label: 'General',
+                    children: [
+                        { label: 'Nautical', layer: usa_naut },
+                        { label: 'Satellite', layer: usa_sat },
+                        { label: 'Topographical', layer: usa_topo },
+     */
+
 
     // FIXME: legends for base layers
     map.on('baselayerchange', e => {
@@ -357,7 +446,7 @@ async function main() {
 
     // Legends per layer:
 
-    let legends = Object.assign({}, Object.fromEntries(Object.keys(chloroLayersData).map(key => [key])));//, Object.fromEntries(Object.keys(pointLayersData).map(key => [key])));
+    let legends = {}; //Object.assign({}, Object.fromEntries(Object.keys(chloroLayersData).map(key => [key])));//, Object.fromEntries(Object.keys(pointLayersData).map(key => [key])));
 
     // Chloropleth legends
     // eslint-disable-next-line require-atomic-updates
@@ -382,25 +471,32 @@ async function main() {
 
     // Point layer legends
     // eslint-disable-next-line require-atomic-updates
-    // for (let [name, point] of Object.entries(pointLayers)) {
-    //     let legend = L.control({ position: 'bottomright' });
-    //     legend.onAdd = () => {
-    //         let div = L.DomUtil.create('div', 'info legend');
-    //         div.onclick = () => {
-    //             map.flyToBounds(point.layer.getBounds());
-    //         }
-    //         div.innerHTML += `<div><i style="background: ${point.color}"></i>${layerAliases[name]}</div>`.trim();
-    //         return div;
-    //     }
-    //     legends[name] = legend;
-    // }
+    for (let [path, obj] of Object.entries(pointLayers)) {
+        let legend = L.control({ position: 'bottomright' });
+        legend.onAdd = () => {
+            let div = L.DomUtil.create('div', 'info legend');
+            div.onclick = () => {
+                map.flyToBounds(obj.layer.getBounds());
+            }
+            div.innerHTML += `<div><i style="background: ${obj.color}"></i>${pointLayerPropAliases[path]}</div>`.trim();
+            return div;
+        }
+        legends[pointLayerPropAliases[path]] = legend;
+    }
 
     // Enable legends for all layers active at start
+    // chloropleth layers
     for (let path of Object.values(chloroLayersData)) {
         for (let [_, data] of Object.entries(path)) {
             if (data.addToMap) { // if map displayed at start
                 legends[data.legendName].addTo(map);
             }
+        }
+    }
+
+    for (let [path, opts] of Object.entries(pointLayersData)) {
+        if (opts.addToMap) {
+            legends[pointLayerPropAliases[path]].addTo(map);
         }
     }
 
@@ -410,13 +506,67 @@ async function main() {
     //     }
     // }
 
+    // L.Control.GroupedLayers.include({
+    //     getActiveOverlays: function() {
+    //         let active = [];
+    //         for (let obj of this._layers) {
+    //             if (obj.overlay && this._map.hasLayer(obj.layer)) {
+    //                 active.push(obj.layer);
+    //             }
+    //         }
+    //         return active;
+    //     }
+    // });
+
+    // const getActiveOverlaysPerPath = () => {
+    //     let active = layersControl.getActiveOverlays();
+    //     const activeOverlaysPerPath = {}
+    //     for (let [path, propsPerPath] of Object.entries(chloroLayers)) {
+    //         activeOverlaysPerPath[path] = [];
+    //         for (let [prop, obj] of Object.entries(propsPerPath)) {
+    //             if (active.includes(obj.layer)) {
+    //                 activeOverlaysPerPath[path].push(obj);
+    //             }
+    //         }
+    //     }
+    //     return activeOverlaysPerPath;
+    // }
+
+    // const countOverlaysPerPath = (activeOverlaysPerPath) => {
+    //     let overlaysPerPathCount = {};
+    //     for (let [path, overlayObjs] of Object.entries(activeOverlaysPerPath)) {
+    //         overlaysPerPathCount[path] = overlayObjs.length;
+    //     }
+    //     return overlaysPerPathCount;
+    // }
+
+    // let prevLayer;
+
     map.on('overlayadd', function(e) {
-        map.flyToBounds(e.layer.getBounds());
-        legends[e.name].addTo(this);
+        // const activeOverlaysPerPath = getActiveOverlaysPerPath();
+        // const overlaysPerPathCount = countOverlaysPerPath(activeOverlaysPerPath);
+        // for (let [path, overlayCount] of Object.entries(overlaysPerPathCount)) {
+        //     if (overlayCount == 2) {
+        //         console.log('do something');
+        //         // e.layer.setStyle(feat => {
+        //         //     return {
+        //         //         dashArray: 4
+        //         //     }
+        //         // });
+        //     }
+        //     if (overlayCount > 2) {
+        //         alert('Cannot have more than 2 overlays per path');
+        //         const layerInput = Array.from(layersControl._overlaysList.childNodes).map(node => Array.from(node.querySelectorAll('label:not(.leaflet-control-layers-group-label'))).flat().find(node => node.querySelector('span').innerText == " " + e.name).querySelector('input');
+        //         setTimeout(() => layerInput.click(), 0);
+        //     }
+        // }
+        // // debugger;
+        map.flyToBounds(e.target.getBounds());
+        legends[e.layer.options.legendName].addTo(this);
     });
 
     map.on('overlayremove', function(e) {
-        this.removeControl(legends[e.name]);
+        this.removeControl(legends[e.layer.options.legendName]);
     });
 
     map.flyTo([42.37539336229674, -71.11111767590047], 14, { duration: 3 }); // over Cambridge

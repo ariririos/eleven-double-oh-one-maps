@@ -108,3 +108,6 @@ dist
 
 # ESLint config
 .eslintrc.js
+
+# Old data
+./server/public/data/old/
