@@ -22,6 +22,10 @@ html, body {
     min-height: 20px;
 }
 
+.legend div.collapsed {
+    display: none;
+}
+
 .info {
     padding: 6px 8px;
     font: 14px/16px Arial, Helvetica, sans-serif;

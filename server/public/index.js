@@ -130,7 +130,7 @@ async function createPointLayer(geojson, color, project, filterFn, labelFn, lege
     return {
         layer: L.geoJSON(moddedGeojson, {
             pointToLayer: (point, latlng) =>  {
-                let marker = L.circleMarker(latlng, { radius: 3, color, weight: 1 });
+                let marker = L.circle(latlng, { radius: 3, color });
                 try {
                     marker.bindTooltip(document.createTextNode(labelFn(point)), { permanent: true, opacity: 0.7 });
                 }
@@ -243,7 +243,7 @@ async function main() {
             [propAliases.blkRenters]: {
                 legendName: layerAliases.centralRenters,
                 longName: 'Renter-occupied housing units',
-                addToMap: true
+                addToMap: false
             },
             [propAliases.blkFamilies]: {
                 legendName: layerAliases.centralFamilies,
@@ -263,7 +263,7 @@ async function main() {
             [propAliases.blkMeanROWWidths]: {
                 legendName: layerAliases.centralMeanROWWidthsBlock,
                 longName: 'Mean ROW width',
-                addToMap: false,
+                addToMap: true,
                 colorScheme: 'YlGn'
             }
         },
@@ -276,7 +276,7 @@ async function main() {
             [propAliases.blkRenters]: {
                 legendName: layerAliases.porterRenters,
                 longName: 'Renter-occupied housing units',
-                addToMap: true
+                addToMap: false
             },
             [propAliases.blkFamilies]: {
                 legendName: layerAliases.porterFamilies,
@@ -296,7 +296,7 @@ async function main() {
             [propAliases.blkMeanROWWidths]: {
                 legendName: layerAliases.porterMeanROWWidthsBlock,
                 longName: 'Mean ROW width',
-                addToMap: false,
+                addToMap: true,
                 colorScheme: 'YlGn'
             }
         }
@@ -323,25 +323,25 @@ async function main() {
     // FIXME: filter trees
     let pointLayersData = {
         'data/combo/BasketCentral.geojson': {
-            color: 'green',
+            color: '#9e02e9',
             label: point => point.properties.Min_Price,
             addToMap: true,
             filterFn: () => true
         },
         'data/combo/CoffeeCentral.geojson': {
-            color: 'blue',
+            color: '#ec0000',
             label: point => point.properties.Price,
             addToMap: true,
             filterFn: () => true
         },
         'data/combo/BasketPorter.geojson': {
-            color: 'green',
+            color: '#9e02e9',
             label: point => point.properties.Min_Price,
             addToMap: true,
             filterFn: () => true
         },
         'data/combo/CoffeePorter.geojson': {
-            color: 'blue',
+            color: '#ec0000',
             label: point => point.properties.Value,
             addToMap: true,
             filterFn: () => true
@@ -455,8 +455,16 @@ async function main() {
             let legend = L.control({ position: 'bottomright' });
             legend.onAdd = () => {
                 let div = L.DomUtil.create('div', 'info legend');
+                let expanded = true;
                 div.onclick = () => {
-                    map.flyToBounds(layerData.layer.getBounds());
+                    expanded = !expanded;
+                    if (expanded) {
+                        Array.from(div.childNodes).filter(node => node.querySelector('i')).forEach(node => node.classList.remove('collapsed'))
+                    }
+                    else {
+                        Array.from(div.childNodes).filter(node => node.querySelector('i')).forEach(node => node.classList.add('collapsed'))
+                    }
+                    // map.flyToBounds(layerData.layer.getBounds());
                 }
                 let colors = layerData.colors;
                 div.innerHTML += `<div>${legendName}<br/></div>`;
@@ -475,9 +483,9 @@ async function main() {
         let legend = L.control({ position: 'bottomright' });
         legend.onAdd = () => {
             let div = L.DomUtil.create('div', 'info legend');
-            div.onclick = () => {
-                map.flyToBounds(obj.layer.getBounds());
-            }
+            // div.onclick = () => {
+            //     map.flyToBounds(obj.layer.getBounds());
+            // }
             div.innerHTML += `<div><i style="background: ${obj.color}"></i>${pointLayerPropAliases[path]}</div>`.trim();
             return div;
         }
