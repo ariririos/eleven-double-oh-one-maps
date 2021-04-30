@@ -52,9 +52,15 @@ let map = L.map('map', {
     zoom: 12 // approx bounded by I-95
 });
 
-let dark = L.tileLayer("https://api.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={mapboxToken}", { id: 'mapbox.dark', mapboxToken });
-let light = L.tileLayer("https://api.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={mapboxToken}", { id: 'mapbox.light', mapboxToken });
-light.addTo(map);
+// Set up Mapbox basemaps
+let dark = L.tileLayer("https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={mapboxToken}", { tileSize: 512, maxZoom: 18, zoomOffset: -1, id: 'mapbox/dark-v10', mapboxToken });
+let light = L.tileLayer("https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={mapboxToken}", { tileSize: 512, maxZoom: 18, zoomOffset: -1, id: 'mapbox/light-v10', mapboxToken });
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    dark.addTo(map);
+}
+else {
+    light.addTo(map);
+}
 
 function projectFeaturesToWGS84(features) {
     // FIXME: not dealing with multipolygons here
